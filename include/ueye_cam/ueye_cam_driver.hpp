@@ -15,7 +15,7 @@
 *
 * SOFTWARE LICENSE AGREEMENT (BSD LICENSE):
 *
-* Copyright (c) 2013, Anqi Xu
+* Copyright (c) 2013-2016, Anqi Xu and contributors
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -48,21 +48,22 @@
 #ifndef UEYE_CAM_DRIVER_HPP_
 #define UEYE_CAM_DRIVER_HPP_
 
+
 #include <ueye.h>
 #include <string>
 #include <thread>
+#include <functional>
 #include "logging_macros.hpp"
 
-namespace ueye_cam
-{
-#define CAP(val, min, max)                                                                                             \
-  if (val < min)                                                                                                       \
-  {                                                                                                                    \
-    val = min;                                                                                                         \
-  }                                                                                                                    \
-  else if (val > max)                                                                                                  \
-  {                                                                                                                    \
-    val = max;                                                                                                         \
+
+namespace ueye_cam {
+
+
+#define CAP(val, min, max) \
+  if (val < min) { \
+    val = min; \
+  } else if (val > max) { \
+    val = max; \
   }
 
 #define IS_SUBSAMPLING_2X (IS_SUBSAMPLING_2X_VERTICAL | IS_SUBSAMPLING_2X_HORIZONTAL)
@@ -75,15 +76,14 @@ namespace ueye_cam
 #define IS_BINNING_8X (IS_BINNING_8X_VERTICAL | IS_BINNING_8X_HORIZONTAL)
 #define IS_BINNING_16X (IS_BINNING_16X_VERTICAL | IS_BINNING_16X_HORIZONTAL)
 
+
 /**
  * Thin wrapper for UEye camera API from IDS Imaging Development Systems GMBH.
  */
-class UEyeCamDriver
-{
-  int iFoc;
-
+class UEyeCamDriver {
 public:
   constexpr static int ANY_CAMERA = 0;
+
 
   /**
    * Initializes member variables.
@@ -126,7 +126,7 @@ public:
    * internal frame buffer. This function will stop live capture
    * automatically if necessary.
    *
-   * \param mode Color mode string. Valid values: {"rgb8", "bgr8", "mono8", "bayer_rggb8"}.
+   * \param mode Color mode string. Valid values: see UEyeCamDriver::COLOR_DICTIONARY
    *   Certain values may not be available for a given camera model.
    * \param reallocate_buffer Whether to auto-reallocate buffer or not after
    *   changing parameter. If set to false, remember to reallocate_buffer
@@ -134,7 +134,7 @@ public:
    *
    * \return IS_SUCCESS if successful, error flag otherwise (see err2str).
    */
-  INT setColorMode(std::string mode, bool reallocate_buffer = true);
+  INT setColorMode(std::string& mode, bool reallocate_buffer = true);
 
   /**
    * Updates current camera handle's sensor resolution and area of interest.
@@ -154,8 +154,8 @@ public:
    *
    * \return IS_SUCCESS if successful, error flag otherwise (see err2str).
    */
-  INT setResolution(INT& image_width, INT& image_height, INT& image_left, INT& image_top,
-                    bool reallocate_buffer = true);
+  INT setResolution(INT& image_width, INT& image_height, INT& image_left,
+      INT& image_top, bool reallocate_buffer = true);
 
   /**
    * Updates current camera handle's subsampling rate.
@@ -210,8 +210,8 @@ public:
    *
    * \return IS_SUCCESS if successful, error flag otherwise (see err2str).
    */
-  INT setGain(bool& auto_gain, INT& master_gain_prc, INT& red_gain_prc, INT& green_gain_prc, INT& blue_gain_prc,
-              bool& gain_boost);
+  INT setGain(bool& auto_gain, INT& master_gain_prc, INT& red_gain_prc,
+      INT& green_gain_prc, INT& blue_gain_prc, bool& gain_boost);
 
   /**
    * Updates current camera handle's exposure / shutter either to auto mode, or
@@ -264,6 +264,25 @@ public:
    * \return IS_SUCCESS if successful, error flag otherwise (see err2str).
    */
   INT setPixelClockRate(INT& clock_rate_mhz);
+
+  /**
+   * Enable/disable autofocus and set manual value. Does not apply to all model
+   * 
+   * \param bEnable Enable or disable autofocus
+   * \param nValue focus value
+   * 
+   * \return IS_SUCCESS if successful, error flag otherwise (see err2str)
+   */
+  INT setFocus(bool bEnable, int nValue);
+
+  /**
+   * Enable/disable backlight compensation. Does not apply to all model
+   * 
+   * \param bEnable Enable or disable backlight compensation
+   * 
+   * \return IS_SUCCESS if successful, error flag otherwise (see err2str)
+   */
+  INT setBacklightCompensation(bool bEnable);
 
   /**
    * Updates the flash signal's delay (from start of exposure) and duration.
@@ -352,31 +371,23 @@ public:
    */
   const char* processNextFrame(INT timeout_ms);
 
-  INT setFocus(bool bEnable, int nValue);
-  INT setBacklightCompensation(bool bEnable);
+  inline bool isConnected() { return (cam_handle_ != (HIDS) 0); }
 
-  inline bool isConnected()
-  {
-    return (cam_handle_ != (HIDS)0);
+  inline bool freeRunModeActive() {
+    return ((cam_handle_ != (HIDS) 0) &&
+        (is_SetExternalTrigger(cam_handle_, IS_GET_EXTERNALTRIGGER) == IS_SET_TRIGGER_OFF) &&
+        (is_CaptureVideo(cam_handle_, IS_GET_LIVE) == TRUE));
   }
 
-  inline bool freeRunModeActive()
-  {
-    return ((cam_handle_ != (HIDS)0) &&
-            (is_SetExternalTrigger(cam_handle_, IS_GET_EXTERNALTRIGGER) == IS_SET_TRIGGER_OFF) &&
-            (is_CaptureVideo(cam_handle_, IS_GET_LIVE) == TRUE));
+  inline bool extTriggerModeActive() {
+    return ((cam_handle_ != (HIDS) 0) &&
+        (is_SetExternalTrigger(cam_handle_, IS_GET_EXTERNALTRIGGER) == IS_SET_TRIGGER_HI_LO) &&
+        (is_CaptureVideo(cam_handle_, IS_GET_LIVE) == TRUE));
   }
 
-  inline bool extTriggerModeActive()
-  {
-    return ((cam_handle_ != (HIDS)0) &&
-            (is_SetExternalTrigger(cam_handle_, IS_GET_EXTERNALTRIGGER) == IS_SET_TRIGGER_HI_LO) &&
-            (is_CaptureVideo(cam_handle_, IS_GET_LIVE) == TRUE));
-  }
-
-  inline bool isCapturing()
-  {
-    return ((cam_handle_ != (HIDS)0) && (is_CaptureVideo(cam_handle_, IS_GET_LIVE) == TRUE));
+  inline bool isCapturing() {
+    return ((cam_handle_ != (HIDS) 0) &&
+        (is_CaptureVideo(cam_handle_, IS_GET_LIVE) == TRUE));
   }
 
   /**
@@ -390,14 +401,45 @@ public:
   const static char* colormode2str(INT mode);
 
   /**
+   * translates UEye color mode flag to target ROS image encoding.
+   */
+  const static std::string colormode2img_enc(INT mode);
+
+  /**
+   *  bits per pixel attribute of UEye color mode flag
+   */
+  const static INT colormode2bpp(INT mode);
+
+  /**
+   *  check if this driver supports the chosen UEye color mode
+   */
+  const static bool isSupportedColorMode(INT mode);
+
+  /**
+   * translates ROS name to UEye color mode flag or the other way round.
+   */
+  const static INT name2colormode(const std::string& name);
+  const static std::string colormode2name(INT mode);
+
+  /**
+   * returns the proper transfer function to translate and copy the camera format
+   * pixel buffer either into an 8 or 16 bit unsigned int per channel format.
+   */
+  const static std::function<void*(void*, void*, size_t)> getUnpackCopyFunc(INT color_mode);
+  static void* unpackRGB10(void* dst, void* src, size_t num);
+  static void* unpack10u(void* dst, void* src, size_t num);
+  static void* unpack12u(void* dst, void* src, size_t num);
+
+  /**
    * Sets a timestamp indicating the moment of the image capture
    */
-  bool getTimestamp(UEYETIME* timestamp);
+  bool getTimestamp(UEYETIME *timestamp);
 
   /**
    * Sets a clock tick indicating the moment of the image capture
    */
-  bool getClockTick(uint64_t* tick);
+  bool getClockTick(uint64_t *tick);
+
 
 protected:
   /**
@@ -407,26 +449,32 @@ protected:
    * then force-updates to default settings if current ones are not supported
    * by this driver wrapper (ueye_cam), and finally force (re-)allocates
    * internal frame buffer.
-   *
+   * 
    * This function is intended to be called internally, after opening a camera handle
    * (in connectCam()) or after loading a UEye camera configuration file
    * (in loadCamConfig()), where the camera may be already operating with a
    * non-supported setting.
-   *
+   * 
    * \param dft_mode_str: default color mode to switch to, if current color mode
    *   is not supported by this driver wrapper. Valid values: {"rgb8", "bgr8", "mono8", "bayer_rggb8"}
-   *
+   * 
    * \return IS_SUCCESS if successful, error flag otherwise (see err2str).
    */
   virtual INT syncCamConfig(std::string dft_mode_str = "mono8");
 
+
+  virtual void handleTimeout() {};
+
+
   /**
    * (Re-)allocates internal frame buffer after querying current
    * area of interest (resolution), and configures IDS driver to use this buffer.
-   *
+   * 
    * \return IS_SUCCESS if successful, error flag otherwise (see err2str).
    */
   INT reallocateCamBuffer();
+
+  const static std::map<std::string, INT> COLOR_DICTIONARY;
 
   HIDS cam_handle_;
   SENSORINFO cam_sensor_info_;
@@ -440,9 +488,12 @@ protected:
   unsigned int cam_subsampling_rate_;
   unsigned int cam_binning_rate_;
   double cam_sensor_scaling_rate_;
+  INT color_mode_;
   INT bits_per_pixel_;
 };
 
-}  // namespace ueye_cam
+
+} // namespace ueye_cam
+
 
 #endif /* UEYE_CAM_DRIVER_HPP_ */
